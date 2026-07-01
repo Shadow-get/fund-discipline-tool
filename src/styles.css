@@ -194,6 +194,10 @@ p {
   grid-template-columns: repeat(4, minmax(160px, 1fr));
 }
 
+.form-grid.single-input {
+  grid-template-columns: minmax(220px, 420px);
+}
+
 .state-grid {
   grid-template-columns: repeat(4, minmax(160px, 1fr));
   margin-top: 12px;
@@ -204,6 +208,12 @@ label {
   gap: 7px;
   color: #344254;
   font-size: 13px;
+}
+
+label small,
+.settings-note {
+  color: #778392;
+  line-height: 1.45;
 }
 
 input,
@@ -446,6 +456,33 @@ th {
   display: grid;
   grid-template-columns: repeat(5, minmax(180px, 1fr));
   gap: 12px;
+}
+
+.flow-note {
+  margin-bottom: 14px;
+  border: 1px solid #dce7f1;
+  border-radius: 8px;
+  padding: 13px 14px;
+  background: #f7fbff;
+}
+
+.flow-note strong {
+  display: block;
+  margin-bottom: 5px;
+  color: #152132;
+}
+
+.flow-note p,
+.settings-note {
+  margin: 0;
+}
+
+.cashflow-settings {
+  margin-top: 12px;
+}
+
+.cashflow-settings .form-grid {
+  margin-top: 12px;
 }
 
 .opportunity-panel {

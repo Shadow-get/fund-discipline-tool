@@ -3,41 +3,59 @@
     <section>
       <div class="section-heading">
         <div>
-          <span class="eyebrow">主入口</span>
-          <h2>月现金流分配器</h2>
+          <span class="eyebrow">新手入口</span>
+          <h2>本月新增资金怎么分</h2>
         </div>
-        <span class="data-note">只调整新增资金，不默认卖出现有持仓</span>
+        <span class="data-note">先填金额，其他都有默认值</span>
       </div>
 
-      <div class="form-grid">
+      <div class="flow-note">
+        <strong>产品目标</strong>
+        <p>这里只处理“本月新赚/新攒下来准备投资的钱”，系统自动拆成核心定投、卫星机会资金和等待资金，不要求你先判断每个市场贵不贵。</p>
+      </div>
+
+      <div class="form-grid single-input">
         <label>
-          每月可投资金额
+          本月新增可投资金额
           <input v-model.number="monthlyAmount" type="number" min="0" step="100" />
-        </label>
-        <label>
-          投资风格
-          <select v-model="style">
-            <option v-for="(label, key) in styleLabels" :key="key" :value="key">{{ label }}</option>
-          </select>
-        </label>
-        <label>
-          波动偏好
-          <select v-model="volatility">
-            <option value="low">低波动</option>
-            <option value="medium">普通</option>
-            <option value="high">高波动</option>
-          </select>
+          <small>不包含已有持仓，也不是账户总资产。先填这个数字就能生成本月方案。</small>
         </label>
       </div>
 
-      <div class="state-grid">
-        <label v-for="key in stateKeys" :key="key">
-          {{ bucketLabels[key] }}估值状态
-          <select v-model="states[key]">
-            <option v-for="(label, state) in marketStateLabels" :key="state" :value="state">{{ label }}</option>
-          </select>
-        </label>
-      </div>
+      <details class="advanced-settings cashflow-settings">
+        <summary>组合偏好（可选）</summary>
+        <div class="form-grid">
+          <label>
+            长期组合风格
+            <select v-model="style">
+              <option v-for="(label, key) in styleLabels" :key="key" :value="key">{{ label }}</option>
+            </select>
+            <small>这是用户偏好。默认用“主线/产业增强”：核心仓长期定投，卫星仓只在机会出现时动用。</small>
+          </label>
+          <label>
+            执行拆分偏好
+            <select v-model="volatility">
+              <option value="low">低波动</option>
+              <option value="medium">普通</option>
+              <option value="high">高波动</option>
+            </select>
+            <small>这是用户风格，只影响日投、周投、月投的拆分节奏，不代表市场预测。</small>
+          </label>
+        </div>
+      </details>
+
+      <details class="advanced-settings cashflow-settings">
+        <summary>市场状态（系统默认，可选修正）</summary>
+        <p class="settings-note">这些是当前市场估值/热度状态，后续应由估值模块自动写入。小白不需要改，只有你明确认为系统判断偏差时再修正。</p>
+        <div class="state-grid">
+          <label v-for="key in stateKeys" :key="key">
+            {{ bucketLabels[key] }}当前状态
+            <select v-model="states[key]">
+              <option v-for="(label, state) in marketStateLabels" :key="state" :value="state">{{ label }}</option>
+            </select>
+          </label>
+        </div>
+      </details>
     </section>
 
     <section>
@@ -170,7 +188,6 @@ const plan = computed(() =>
   }),
 );
 
-const satelliteLine = computed(() => plan.value.lines.find((line) => line.key === "satellite"));
 const monthlySatelliteBudget = computed(() => monthlyAmount.value * (strategyTemplates[style.value]?.satellite ?? 0));
 
 const cashflowTargets = computed<BucketTargetMap>(() => ({
@@ -200,12 +217,6 @@ const modeLabel = computed(() => {
   if (scan.value.mode === "cache") return "缓存数据";
   if (scan.value.mode === "fallback") return "内置快照";
   return "数据异常";
-});
-
-const satelliteBuyDetail = computed(() => {
-  if (style.value !== "mainline") return "按当前风格模板执行";
-  if (!topMainline.value) return satelliteDeployment.value.label;
-  return `${satelliteDeployment.value.label} · ${topMainline.value.status}`;
 });
 
 const mainlineDecisionTitle = computed(() => {
