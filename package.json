@@ -1,0 +1,21 @@
+{
+  "name": "index-fund-discipline-tool",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite --host 127.0.0.1",
+    "serve": "vite --config vite.config.mjs --configLoader native --host 127.0.0.1 --port 5173 --strictPort",
+    "build": "vue-tsc --noEmit && vite build",
+    "preview": "vite preview --host 127.0.0.1"
+  },
+  "dependencies": {
+    "vite": "^6.0.7",
+    "vue": "^3.5.13"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-vue": "^6.0.7",
+    "typescript": "^5.7.2",
+    "vue-tsc": "^2.2.0"
+  }
+}
