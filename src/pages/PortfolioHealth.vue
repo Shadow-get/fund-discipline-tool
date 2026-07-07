@@ -44,11 +44,13 @@
 </template>
 
 <script setup lang="ts">
-import { computed, reactive } from "vue";
+import { reactive } from "vue";
 import ExplanationCard from "../components/ExplanationCard.vue";
 import MetricCard from "../components/MetricCard.vue";
 import RiskBadge from "../components/RiskBadge.vue";
+import { useCoreCalculation } from "../composables/useCoreCalculation";
 import { getPortfolioHealth } from "../rules/portfolio";
+import { calculatePortfolioHealth } from "../services/calculationApi";
 import { money, percent } from "../utils/format";
 
 const holdings = reactive({
@@ -59,5 +61,12 @@ const holdings = reactive({
   reserve: 25000,
 });
 
-const health = computed(() => getPortfolioHealth(holdings));
+function holdingsInput() {
+  return { ...holdings };
+}
+
+const { value: health } = useCoreCalculation<ReturnType<typeof getPortfolioHealth>>(
+  () => calculatePortfolioHealth<ReturnType<typeof holdingsInput>, ReturnType<typeof getPortfolioHealth>>(holdingsInput()),
+  () => getPortfolioHealth(holdingsInput()),
+);
 </script>

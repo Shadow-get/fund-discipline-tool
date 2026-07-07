@@ -139,14 +139,16 @@ import DcaPlanCard from "../components/DcaPlanCard.vue";
 import ExplanationCard from "../components/ExplanationCard.vue";
 import OpportunityBudgetPanel from "../components/OpportunityBudgetPanel.vue";
 import RiskBadge from "../components/RiskBadge.vue";
+import { useCoreCalculation } from "../composables/useCoreCalculation";
 import { bucketDefinitions, type BucketTargetMap } from "../data/bucketEducation";
 import { bucketLabels, strategyTemplates, styleLabels } from "../data/strategyTemplates";
 import { getMainlineProfile } from "../data/mainlineKnowledge";
 import { marketStateLabels } from "../data/indexPresets";
 import { generateMonthlyPlan } from "../rules/allocation";
 import { getSatelliteDeployment } from "../rules/satelliteOpportunity";
-import { fetchMainlineScan, pickActionableMainline } from "../services/mainlineData";
-import type { AssetBucket, MainlineScanResponse, MarketState, Style } from "../types";
+import { calculateMonthlyPlan } from "../services/calculationApi";
+import { fetchMainlineScan, isMainlineStatusKind, pickActionableMainline } from "../services/mainlineData";
+import type { AssetBucket, MainlineScanResponse, MarketState, MonthlyPlan, Style } from "../types";
 import { money } from "../utils/format";
 
 const monthlyAmount = ref(3000);
@@ -164,18 +166,18 @@ const scan = ref<MainlineScanResponse | null>(null);
 const topMainline = computed(() => pickActionableMainline(scan.value?.results ?? []));
 const activeProfile = computed(() => getMainlineProfile(topMainline.value));
 const satelliteDeployment = computed(() => getSatelliteDeployment(topMainline.value));
-const hasAnyHotMainline = computed(() => (scan.value?.results ?? []).some((item) => item.status === "过热等待"));
+const hasAnyHotMainline = computed(() => (scan.value?.results ?? []).some((item) => isMainlineStatusKind(item, "overheated")));
 const allMainlinesUnavailable = computed(() => {
   const results = scan.value?.results ?? [];
   return results.length > 0 && !topMainline.value;
 });
 
-const plan = computed(() =>
-  generateMonthlyPlan({
+function monthlyPlanInput() {
+  return {
     monthlyAmount: monthlyAmount.value,
     style: style.value,
     volatility: volatility.value,
-    states,
+    states: { ...states },
     overrides:
       style.value === "mainline"
         ? {
@@ -185,7 +187,12 @@ const plan = computed(() =>
             },
           }
         : undefined,
-  }),
+  };
+}
+
+const { value: plan } = useCoreCalculation<MonthlyPlan>(
+  () => calculateMonthlyPlan<ReturnType<typeof monthlyPlanInput>, MonthlyPlan>(monthlyPlanInput()),
+  () => generateMonthlyPlan(monthlyPlanInput()),
 );
 
 const monthlySatelliteBudget = computed(() => monthlyAmount.value * (strategyTemplates[style.value]?.satellite ?? 0));

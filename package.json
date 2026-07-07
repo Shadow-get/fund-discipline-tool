@@ -4,9 +4,9 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "vite --host 127.0.0.1",
+    "dev": "vite --config vite.config.mjs --configLoader native --host 127.0.0.1",
     "serve": "vite --config vite.config.mjs --configLoader native --host 127.0.0.1 --port 5173 --strictPort",
-    "build": "vue-tsc --noEmit && vite build",
+    "build": "vue-tsc --noEmit && vite build --config vite.config.mjs --configLoader native",
     "preview": "vite preview --host 127.0.0.1"
   },
   "dependencies": {

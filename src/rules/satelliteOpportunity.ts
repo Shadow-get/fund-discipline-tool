@@ -1,4 +1,4 @@
-import type { MainlineScanItem, MarketState } from "../types";
+import type { MainlineScanItem, MainlineStatusKey, MarketState } from "../types";
 
 const strategicDcaIds = new Set([
   "theme_power_equipment",
@@ -18,6 +18,14 @@ export type SatelliteDeployment = {
   trigger: string;
 };
 
+function getStatusKind(item: MainlineScanItem): MainlineStatusKey {
+  if (item.statusKey) return item.statusKey;
+  if (item.status.includes("过热") || item.status.includes("杩囩儹")) return "overheated";
+  if (item.status.includes("暂不") || item.status.includes("鏆備笉")) return "rejected";
+  if (item.status.includes("观察") || item.status.includes("瑙傚療")) return "watch";
+  return "top";
+}
+
 export function getSatelliteDeployment(item?: MainlineScanItem | null): SatelliteDeployment {
   if (!item) {
     return {
@@ -31,7 +39,9 @@ export function getSatelliteDeployment(item?: MainlineScanItem | null): Satellit
     };
   }
 
-  if (strategicDcaIds.has(item.candidateId) && item.status !== "过热等待" && item.status !== "暂不进入") {
+  const statusKind = getStatusKind(item);
+
+  if (strategicDcaIds.has(item.candidateId) && statusKind !== "overheated" && statusKind !== "rejected") {
     if (item.heatScore < 70) {
       return {
         multiplier: 1,
@@ -55,7 +65,7 @@ export function getSatelliteDeployment(item?: MainlineScanItem | null): Satellit
     };
   }
 
-  if (item.status === "过热等待" || item.status === "暂不进入") {
+  if (statusKind === "overheated" || statusKind === "rejected") {
     return {
       multiplier: 0,
       state: "overheated",
@@ -67,7 +77,7 @@ export function getSatelliteDeployment(item?: MainlineScanItem | null): Satellit
     };
   }
 
-  if (item.status === "可小仓观察") {
+  if (statusKind === "watch") {
     return {
       multiplier: item.heatScore >= 72 ? 0 : 0.1,
       state: item.heatScore >= 72 ? "overheated" : "high",

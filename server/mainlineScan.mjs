@@ -4,6 +4,7 @@ import { fallbackMainlineScan } from "./mainlineSnapshot.mjs";
 import { mainlineUniverse } from "./mainlineUniverse.mjs";
 
 const cachePath = resolve(process.cwd(), ".cache", "mainline-scan.json");
+const cacheTtlMs = 15 * 60 * 1000;
 const klineFields =
   "f51,f52,f53,f54,f55,f56,f57,f58,f59,f60,f61";
 
@@ -73,6 +74,20 @@ async function fetchCandidateSeries(candidate) {
   }
 
   throw new Error(errors.join("; "));
+}
+
+function friendlyProviderError(error) {
+  const message = String(error?.message ?? error ?? "");
+  if (message.includes("Remote end closed connection without response") || message.includes("RemoteDisconnected")) {
+    return "东方财富公开行情连接被临时断开，已自动降级到缓存或快照。";
+  }
+  if (message.toLowerCase().includes("timeout") || message.includes("超时")) {
+    return "东方财富公开行情响应超时，已自动降级到缓存或快照。";
+  }
+  if (message.includes("有效候选不足")) {
+    return message;
+  }
+  return "东方财富公开行情暂时不可用，已自动降级到缓存或快照。";
 }
 
 function analyzeKlines(candidate, series, benchmark) {
@@ -215,25 +230,63 @@ async function readCache() {
   }
 }
 
+function isFreshCache(payload) {
+  const time = Date.parse(payload?.updatedAt ?? "");
+  return Number.isFinite(time) && Date.now() - time <= cacheTtlMs;
+}
+
+function asCachePayload(payload, message = "使用最近主线扫描缓存，手动深度刷新可重新读取公开行情。") {
+  return {
+    ...payload,
+    mode: payload.mode === "live" ? "cache" : payload.mode,
+    message,
+  };
+}
+
 async function writeCache(payload) {
   await mkdir(dirname(cachePath), { recursive: true });
   await writeFile(cachePath, JSON.stringify(payload, null, 2), "utf8");
 }
 
-export async function scanMainlines({ forceFallback = false } = {}) {
+export async function scanMainlines({ forceFallback = false, forceRefresh = false } = {}) {
   if (forceFallback) {
     return { ...fallbackMainlineScan, mode: "fallback" };
   }
 
-  try {
-    const benchmarkCandidate = mainlineUniverse.find((item) => item.candidateId === "cn_hs300");
-    const benchmarkSeries = await fetchCandidateSeries(benchmarkCandidate);
-    const benchmarkClose = benchmarkSeries.klines.at(-1).close;
-    const benchmark = {
-      returns20: pct(benchmarkClose, benchmarkSeries.klines.at(-21)?.close ?? benchmarkSeries.klines[0].close),
-      returns60: pct(benchmarkClose, benchmarkSeries.klines.at(-61)?.close ?? benchmarkSeries.klines[0].close),
-      returns120: pct(benchmarkClose, benchmarkSeries.klines.at(-121)?.close ?? benchmarkSeries.klines[0].close),
+  const cachedBeforeScan = await readCache();
+  if (!forceRefresh && cachedBeforeScan?.results?.length) {
+    return asCachePayload(
+      cachedBeforeScan,
+      isFreshCache(cachedBeforeScan)
+        ? "使用15分钟内主线扫描缓存，避免重复请求公开行情。"
+        : "使用最近主线扫描缓存；需要实时重扫时请手动刷新。",
+    );
+  }
+
+  if (!forceRefresh && !cachedBeforeScan?.results?.length) {
+    return {
+      ...fallbackMainlineScan,
+      mode: "fallback",
+      message: "暂无主线扫描缓存，先展示内置快照；需要实时重扫时请手动刷新。",
     };
+  }
+
+  try {
+    let benchmark = { returns20: 0, returns60: 0, returns120: 0 };
+    const benchmarkCandidate = mainlineUniverse.find((item) => item.candidateId === "cn_hs300");
+    if (benchmarkCandidate) {
+      try {
+        const benchmarkSeries = await fetchCandidateSeries(benchmarkCandidate);
+        const benchmarkClose = benchmarkSeries.klines.at(-1).close;
+        benchmark = {
+          returns20: pct(benchmarkClose, benchmarkSeries.klines.at(-21)?.close ?? benchmarkSeries.klines[0].close),
+          returns60: pct(benchmarkClose, benchmarkSeries.klines.at(-61)?.close ?? benchmarkSeries.klines[0].close),
+          returns120: pct(benchmarkClose, benchmarkSeries.klines.at(-121)?.close ?? benchmarkSeries.klines[0].close),
+        };
+      } catch {
+        benchmark = { returns20: 0, returns60: 0, returns120: 0 };
+      }
+    }
 
     const settled = await Promise.allSettled(
       mainlineUniverse.map(async (candidate) => {
@@ -265,17 +318,13 @@ export async function scanMainlines({ forceFallback = false } = {}) {
   } catch (error) {
     const cached = await readCache();
     if (cached?.results?.length) {
-      return {
-        ...cached,
-        mode: "cache",
-        message: `公开行情暂不可用，使用最近缓存。原因：${error.message}`,
-      };
+      return asCachePayload(cached, friendlyProviderError(error));
     }
 
     return {
       ...fallbackMainlineScan,
       mode: "fallback",
-      message: `公开行情暂不可用，且没有缓存，使用内置快照。原因：${error.message}`,
+      message: friendlyProviderError(error),
     };
   }
 }

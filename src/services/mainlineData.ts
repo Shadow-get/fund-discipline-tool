@@ -1,22 +1,41 @@
 import { localMainlineSnapshot } from "../data/mainlineSnapshot";
-import type { MainlineScanItem, MainlineScanResponse } from "../types";
+import type { MainlineScanItem, MainlineScanResponse, MainlineStatusKey } from "../types";
+
+export function getMainlineStatusKind(item: MainlineScanItem): MainlineStatusKey {
+  if (item.statusKey) return item.statusKey;
+
+  const status = item.status ?? "";
+  if (status.includes("过热") || status.includes("杩囩儹")) return "overheated";
+  if (status.includes("暂不") || status.includes("鏆備笉")) return "rejected";
+  if (status.includes("观察") || status.includes("瑙傚療")) return "watch";
+  if (status.includes("主线") || status.includes("涓荤嚎")) return "top";
+  return "rejected";
+}
+
+export function isMainlineStatusKind(item: MainlineScanItem, kind: MainlineStatusKey) {
+  return getMainlineStatusKind(item) === kind;
+}
 
 export function splitMainlineGroups(items: MainlineScanItem[]) {
   return {
-    top: items.filter((item) => item.status === "主线候选"),
-    watch: items.filter((item) => item.status === "可小仓观察"),
-    overheated: items.filter((item) => item.status === "过热等待"),
-    rejected: items.filter((item) => item.status === "暂不进入"),
+    top: items.filter((item) => isMainlineStatusKind(item, "top")),
+    watch: items.filter((item) => isMainlineStatusKind(item, "watch")),
+    overheated: items.filter((item) => isMainlineStatusKind(item, "overheated")),
+    rejected: items.filter((item) => isMainlineStatusKind(item, "rejected")),
   };
 }
 
 export function pickActionableMainline(items: MainlineScanItem[]) {
-  return items.find((item) => item.status === "主线候选") ?? items.find((item) => item.status === "可小仓观察");
+  return items.find((item) => isMainlineStatusKind(item, "top")) ?? items.find((item) => isMainlineStatusKind(item, "watch"));
 }
 
-export async function fetchMainlineScan(forceFallback = false): Promise<MainlineScanResponse> {
+export async function fetchMainlineScan(forceFallback = false, forceRefresh = false): Promise<MainlineScanResponse> {
   try {
-    const response = await fetch(`/api/mainline-scan${forceFallback ? "?fallback=1" : ""}`);
+    const params = new URLSearchParams();
+    if (forceFallback) params.set("fallback", "1");
+    if (forceRefresh) params.set("refresh", "1");
+    const query = params.toString();
+    const response = await fetch(`/api/mainline-scan${query ? `?${query}` : ""}`);
     if (!response.ok) {
       throw new Error(`HTTP ${response.status}`);
     }

@@ -67,13 +67,15 @@
 </template>
 
 <script setup lang="ts">
-import { computed, ref } from "vue";
+import { ref } from "vue";
 import ExplanationCard from "../components/ExplanationCard.vue";
 import MetricCard from "../components/MetricCard.vue";
 import SellPlanCard from "../components/SellPlanCard.vue";
+import { useCoreCalculation } from "../composables/useCoreCalculation";
 import { marketStateLabels } from "../data/indexPresets";
 import { getDcaMultiplier } from "../rules/dca";
 import { getSellPlan } from "../rules/sellPlan";
+import { calculateDcaMultiplier, calculateSellPlan } from "../services/calculationApi";
 import type { MarketState } from "../types";
 import { money } from "../utils/format";
 
@@ -86,15 +88,24 @@ const heatScore = ref(82);
 const fundPrice = ref(1.5);
 const state = ref<MarketState>("high");
 
-const multiplier = computed(() => getDcaMultiplier(state.value));
-const sellPlan = computed(() =>
-  getSellPlan({
+function sellInput() {
+  return {
     totalAssets: totalAssets.value,
     currentAmount: currentAmount.value,
     targetWeight: targetWeightPct.value / 100,
     baseRatio: baseRatioPct.value / 100,
     heatScore: heatScore.value,
     fundPrice: fundPrice.value,
-  }),
+  };
+}
+
+const { value: multiplier } = useCoreCalculation<number>(
+  () => calculateDcaMultiplier({ state: state.value }),
+  () => getDcaMultiplier(state.value),
+);
+
+const { value: sellPlan } = useCoreCalculation<ReturnType<typeof getSellPlan>>(
+  () => calculateSellPlan<ReturnType<typeof sellInput>, ReturnType<typeof getSellPlan>>(sellInput()),
+  () => getSellPlan(sellInput()),
 );
 </script>

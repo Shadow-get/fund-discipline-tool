@@ -38,10 +38,12 @@
 </template>
 
 <script setup lang="ts">
-import { computed, ref } from "vue";
+import { ref } from "vue";
 import ExplanationCard from "../components/ExplanationCard.vue";
 import MetricCard from "../components/MetricCard.vue";
+import { useCoreCalculation } from "../composables/useCoreCalculation";
 import { getHarvestPlan } from "../rules/annualHarvest";
+import { calculateHarvestPlan } from "../services/calculationApi";
 import { money } from "../utils/format";
 
 const startPrincipal = ref(60000);
@@ -52,8 +54,8 @@ const currentWeight = ref(28);
 const targetWeight = ref(25);
 const originalMonthlyDca = ref(1000);
 
-const plan = computed(() =>
-  getHarvestPlan({
+function harvestInput() {
+  return {
     startPrincipal: startPrincipal.value,
     annualContribution: annualContribution.value,
     endValue: endValue.value,
@@ -61,6 +63,11 @@ const plan = computed(() =>
     currentWeight: currentWeight.value / 100,
     targetWeight: targetWeight.value / 100,
     originalMonthlyDca: originalMonthlyDca.value,
-  }),
+  };
+}
+
+const { value: plan } = useCoreCalculation<ReturnType<typeof getHarvestPlan>>(
+  () => calculateHarvestPlan<ReturnType<typeof harvestInput>, ReturnType<typeof getHarvestPlan>>(harvestInput()),
+  () => getHarvestPlan(harvestInput()),
 );
 </script>

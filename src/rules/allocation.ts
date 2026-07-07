@@ -9,9 +9,10 @@ export function generateMonthlyPlan(input: {
   style: Style;
   states: Record<Exclude<AssetBucket, "reserve">, MarketState>;
   volatility: "low" | "medium" | "high";
+  template?: Record<AssetBucket, number>;
   overrides?: Partial<Record<Exclude<AssetBucket, "reserve">, BucketOverride>>;
 }): MonthlyPlan {
-  const template = strategyTemplates[input.style] ?? strategyTemplates.balanced;
+  const template = input.template ?? strategyTemplates[input.style] ?? strategyTemplates.balanced;
   const lines = orderedBuckets.map((key) => {
     const ratio = template[key];
     const state = input.states[key];
