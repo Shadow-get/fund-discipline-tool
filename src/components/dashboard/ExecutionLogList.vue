@@ -3,9 +3,9 @@
     <div class="section-heading">
       <div>
         <span class="eyebrow">执行记录</span>
-        <h2>本周提交信息</h2>
+        <h2>{{ title ?? "本周提交信息" }}</h2>
       </div>
-      <span class="data-note">记录会用于判断本周是否已经完成加仓</span>
+      <span class="data-note">{{ description ?? "记录会用于判断本周是否已经完成加仓" }}</span>
     </div>
 
     <div v-if="logs.length" class="execution-log-list">
@@ -28,6 +28,8 @@ import { money } from "../../utils/format";
 
 defineProps<{
   logs: ExecutionLog[];
+  title?: string;
+  description?: string;
 }>();
 
 const emit = defineEmits<{

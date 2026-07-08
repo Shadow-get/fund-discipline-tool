@@ -37,9 +37,11 @@ import AnnualHarvest from "./pages/AnnualHarvest.vue";
 import Dashboard from "./pages/Dashboard.vue";
 import LowValuationPage from "./pages/LowValuationPage.vue";
 import MainlinePage from "./pages/MainlinePage.vue";
+import MarketRiskNewsPage from "./pages/MarketRiskNewsPage.vue";
 import MonthlyCashflow from "./pages/MonthlyCashflow.vue";
 import PortfolioHealth from "./pages/PortfolioHealth.vue";
 import ScenarioSimulator from "./pages/ScenarioSimulator.vue";
+import StockOpportunityPage from "./pages/StockOpportunityPage.vue";
 import StrategyCenter from "./pages/StrategyCenter.vue";
 import ValuationTrader from "./pages/ValuationTrader.vue";
 
@@ -51,6 +53,8 @@ const tabs = [
   { key: "portfolio", label: "组合体检", group: "执行", component: PortfolioHealth },
   { key: "mainline", label: "当年主线", group: "市场机会", component: MainlinePage },
   { key: "lowValuation", label: "低估值板块", group: "市场机会", component: LowValuationPage },
+  { key: "stockOpportunity", label: "个股观察", group: "市场机会", component: StockOpportunityPage },
+  { key: "riskNews", label: "风险新闻", group: "市场机会", component: MarketRiskNewsPage },
   { key: "valuation", label: "高低估买卖器", group: "工具", component: ValuationTrader },
   { key: "scenario", label: "情景模拟", group: "工具", component: ScenarioSimulator },
   { key: "harvest", label: "年度收割", group: "工具", component: AnnualHarvest },

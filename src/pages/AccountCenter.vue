@@ -86,6 +86,27 @@
       </div>
     </section>
 
+    <ReturnCalendar
+      id="account-return-calendar"
+      :selected-month="selectedMonth"
+      :weekdays="weekdays"
+      :calendar-offset="calendarOffset"
+      :calendar-days="calendarDays"
+      :month-profit="monthProfit"
+      :positive-days="positiveDays"
+      :return-days="returnDays"
+      :max-loss="maxLoss"
+      :month-end-value="monthEndValue"
+      @move-month="moveMonth"
+    />
+
+    <ExecutionLogList
+      :logs="activeExecutionLogs"
+      title="账户执行记录"
+      description="记录来自当前账户，会影响持仓成本、收益统计和后续复盘。"
+      @delete="deleteExecution"
+    />
+
     <AppDialog
       :open="editDialogOpen"
       eyebrow="编辑账户"
@@ -246,8 +267,10 @@
 <script setup lang="ts">
 import { computed, ref } from "vue";
 import AppDialog from "../components/AppDialog.vue";
+import ExecutionLogList from "../components/dashboard/ExecutionLogList.vue";
 import HoldingsEditor from "../components/dashboard/HoldingsEditor.vue";
 import NoticeStack from "../components/dashboard/NoticeStack.vue";
+import ReturnCalendar from "../components/dashboard/ReturnCalendar.vue";
 import RiskBadge from "../components/RiskBadge.vue";
 import { usePersistentString } from "../composables/usePersistentRef";
 import { useAccountsStore, useStrategiesStore } from "../composables/useWorkspaceStore";
@@ -263,6 +286,9 @@ import { fetchMainlineScan, getMainlineStatusKind } from "../services/mainlineDa
 import type {
   AccountProfile,
   AssetBucket,
+  CalendarDay,
+  DailyReturnItem,
+  ExecutionLog,
   HoldingItem,
   LowValuationScanItem,
   LowValuationScanResponse,
@@ -284,10 +310,12 @@ type TargetWithSignal = StrategyTargetRecommendation & {
 };
 
 const bucketOptions: HoldingBucket[] = ["chinaCore", "globalCore", "defensive", "satellite"];
+const weekdays = ["一", "二", "三", "四", "五", "六", "日"];
 const accounts = useAccountsStore();
 const strategies = useStrategiesStore();
 const activeAccountId = usePersistentString<string>("licai.activeAccountId", "account-default");
 const activeStrategyId = usePersistentString<string>("licai.activeStrategyId", "strategy-balanced-core");
+const selectedMonth = usePersistentString<string>("licai.accountCenter.selectedMonth", currentMonthKey());
 
 const createDialogOpen = ref(false);
 const editDialogOpen = ref(false);
@@ -302,6 +330,8 @@ const lowValuationScan = ref<LowValuationScanResponse | null>(null);
 
 const activeAccount = computed(() => accounts.value.find((account) => account.id === activeAccountId.value) ?? accounts.value[0]);
 const activeStrategy = computed(() => strategies.value.find((strategy) => strategy.id === activeAccount.value?.strategyId) ?? strategies.value[0]);
+const activeExecutionLogs = computed(() => activeAccount.value?.executionLogs ?? []);
+const activeDailyReturns = computed(() => activeAccount.value?.dailyReturns ?? []);
 const selectedStrategy = computed(() => strategies.value.find((strategy) => strategy.id === newStrategyId.value) ?? strategies.value[0]);
 const selectedEditStrategy = computed(() => strategies.value.find((strategy) => strategy.id === editDraft.value?.strategyId) ?? null);
 const marketRecommendation = computed(() => buildMarketRecommendation(mainlineScan.value, lowValuationScan.value));
@@ -473,9 +503,9 @@ function removeDraftHolding(id: string) {
 function openDashboardCalendar(account: AccountProfile) {
   activeAccountId.value = account.id;
   if (account.strategyId) activeStrategyId.value = account.strategyId;
-  window.dispatchEvent(
-    new CustomEvent("licai:navigate", { detail: { tab: "dashboard", target: "dashboard-return-calendar" } }),
-  );
+  window.requestAnimationFrame(() => {
+    document.getElementById("account-return-calendar")?.scrollIntoView({ behavior: "smooth", block: "start" });
+  });
 }
 
 function setActiveAccount(account: AccountProfile) {
@@ -652,5 +682,70 @@ function removeAccount(id: string) {
     activeStrategyId.value = accounts.value[0]?.strategyId ?? activeStrategyId.value;
   }
   notify("success", "账户已删除", `${target?.name ?? "该账户"} 已从账户列表移除。`);
+}
+
+function parseMonth(monthKey: string) {
+  const [year, month] = monthKey.split("-").map(Number);
+  return { year, month: month - 1 };
+}
+
+function moveMonth(offset: number) {
+  const { year, month } = parseMonth(selectedMonth.value);
+  const next = new Date(year, month + offset, 1);
+  selectedMonth.value = `${next.getFullYear()}-${String(next.getMonth() + 1).padStart(2, "0")}`;
+}
+
+const monthlyReturnItems = computed<DailyReturnItem[]>(() =>
+  activeDailyReturns.value.filter((item) => item.date.startsWith(selectedMonth.value)),
+);
+const dailyReturnMap = computed(() => new Map(monthlyReturnItems.value.map((item) => [item.date, item])));
+const monthProfit = computed(() => monthlyReturnItems.value.reduce((sum, item) => sum + safeNumber(item.profit), 0));
+const returnDays = computed(() => monthlyReturnItems.value.length);
+const positiveDays = computed(() => monthlyReturnItems.value.filter((item) => safeNumber(item.profit) > 0).length);
+const maxLoss = computed(() => Math.min(0, ...monthlyReturnItems.value.map((item) => safeNumber(item.profit))));
+const monthEndValue = computed(() => {
+  const items = monthlyReturnItems.value;
+  return items.length ? safeNumber(items[items.length - 1].marketValue) : activeAccount.value ? accountHoldingValue(activeAccount.value) : 0;
+});
+
+const calendarOffset = computed(() => {
+  const { year, month } = parseMonth(selectedMonth.value);
+  const firstDay = new Date(year, month, 1).getDay();
+  return (firstDay + 6) % 7;
+});
+
+const calendarDays = computed<CalendarDay[]>(() => {
+  const { year, month } = parseMonth(selectedMonth.value);
+  const daysInMonth = new Date(year, month + 1, 0).getDate();
+
+  return Array.from({ length: daysInMonth }, (_, index) => {
+    const day = index + 1;
+    const date = `${year}-${String(month + 1).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+    return {
+      day,
+      date,
+      item: dailyReturnMap.value.get(date),
+    };
+  });
+});
+
+function updateHoldingAmount(code: string, amount: number) {
+  const target = activeAccount.value?.holdings.find((holding) => holding.code === code);
+  if (!target) return;
+  target.costAmount = Math.max(0, safeNumber(target.costAmount) + amount);
+  target.marketValue = Math.max(0, safeNumber(target.marketValue) + amount);
+}
+
+function deleteExecution(id: string) {
+  if (!activeAccount.value) return;
+  const target = activeAccount.value.executionLogs.find((log: ExecutionLog) => log.id === id);
+  if (!target) {
+    notify("danger", "撤销失败", "没有找到这条执行记录，可能已经被删除。");
+    return;
+  }
+
+  activeAccount.value.executionLogs = activeAccount.value.executionLogs.filter((log: ExecutionLog) => log.id !== id);
+  updateHoldingAmount(target.code, -target.amount);
+  notify("success", "已撤销记录", `${target.code} 的 ${money(target.amount)} 已从执行记录和持仓成本中扣回。`);
 }
 </script>

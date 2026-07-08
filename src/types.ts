@@ -295,3 +295,252 @@ export type MarketRecommendation = {
   satelliteThrottle: number;
   indicators: MarketHeatIndicator[];
 };
+
+export type KlinePeriod = "day" | "week" | "month";
+
+export type KlinePoint = {
+  date: string;
+  open: number;
+  close: number;
+  high: number;
+  low: number;
+  volume: number;
+  amount: number;
+  amplitude: number;
+  changePct: number;
+  changeAmount: number;
+  turnover: number;
+  ma5: number | null;
+  ma10: number | null;
+  ma20: number | null;
+  ma60: number | null;
+};
+
+export type TechnicalLevel = {
+  label: string;
+  value: number;
+  distancePct: number;
+  kind: "support" | "resistance";
+  date?: string;
+};
+
+export type TechnicalEvent = {
+  date: string;
+  type:
+    | "goldenCross"
+    | "deathCross"
+    | "volumeBreakout"
+    | "volumeStart"
+    | "shrinkPullback"
+    | "dryVolume"
+    | "volumeStall"
+    | "volumeBreakdown"
+    | "maRecover"
+    | "maBreakdown";
+  label: string;
+  price: number;
+  volumeRatio: number;
+  severity: "good" | "warn" | "danger" | "neutral";
+  reason: string;
+  hint: string;
+};
+
+export type TechnicalGuideItem = {
+  title: string;
+  summary: string;
+  detail: string;
+  tone: "good" | "warn" | "danger" | "neutral";
+};
+
+export type TechnicalAnalysis = {
+  close: number;
+  changePct: number;
+  returns20: number;
+  returns60: number;
+  returns120: number;
+  ma5: number | null;
+  ma10: number | null;
+  ma20: number | null;
+  ma60: number | null;
+  biasMa20: number;
+  volumeRatio: number;
+  drawdownPct: number;
+  supportLevels: TechnicalLevel[];
+  resistanceLevels: TechnicalLevel[];
+  events: TechnicalEvent[];
+  guide: TechnicalGuideItem[];
+  dailyCommentary: {
+    pattern: string;
+    volumePrice: string;
+    trend: string;
+    conclusion: string;
+  };
+  trendLabel: string;
+  status: "bullish" | "watch" | "overheated" | "broken" | "neutral";
+  conclusion: string;
+  riskNote: string;
+};
+
+export type MarketKlineResponse = {
+  mode: "live" | "fallback" | "error";
+  source: string;
+  updatedAt: string;
+  period: KlinePeriod;
+  target: {
+    id: string;
+    name: string;
+    category: string;
+    representativeIndex: string;
+    code: string;
+    secid: string;
+  };
+  message: string;
+  points: KlinePoint[];
+  analysis: TechnicalAnalysis | null;
+};
+
+export type StockOpportunityStatus = "重点观察" | "跟踪观察" | "过热等待" | "暂不观察";
+
+export type StockOpportunityItem = {
+  code: string;
+  name: string;
+  industry: string;
+  theme: string;
+  discoverySource?: string;
+  close: number;
+  return20: number;
+  return40: number;
+  return60: number;
+  relative40: number;
+  volumeRatio: number;
+  biasMa20: number;
+  maxDrawdown: number;
+  trendScore: number;
+  qualityScore: number;
+  riskScore: number;
+  score: number;
+  stage: string;
+  status: StockOpportunityStatus;
+  rating: string;
+  ratingText: string;
+  action: string;
+  reason: string;
+  support: number;
+  pressure: number | null;
+  method: string;
+  financial: {
+    mode: "live" | "estimate";
+    report: string;
+    reportDate: string;
+    revenueYoy: number;
+    profitYoy: number;
+    roe: number;
+    grossMargin: number;
+    netMargin: number;
+    debtRatio: number;
+    cashToRevenue: number;
+    financialScore: number;
+    growthScore: number;
+    profitabilityScore: number;
+    balanceScore: number;
+    cashFlowScore: number;
+    qualityAnchorScore: number;
+    highlights: string[];
+    deductions: string[];
+    summary: string;
+  };
+  institutionalView: {
+    conclusion: string;
+    cycle: string;
+    financial: string;
+    technical: string;
+    strategyFit: {
+      style: string;
+      master: string;
+      fit: string;
+      explanation: string;
+    };
+    indicatorAssessments: Array<{
+      label: string;
+      value: string;
+      status: "good" | "neutral" | "warn" | "bad";
+      explanation: string;
+    }>;
+    watchPlan: string[];
+    riskChecklist: string[];
+  };
+  evidence: {
+    trend: string;
+    volume: string;
+    quality: string;
+    risk: string;
+  };
+  updatedAt: string;
+};
+
+export type StockOpportunityResponse = {
+  mode: "live" | "fallback" | "error";
+  source: string;
+  updatedAt: string;
+  message: string;
+  searchQuery?: string;
+  methodology: string[];
+  sectorSummary?: Array<{
+    name: string;
+    count: number;
+    topCount: number;
+    avgScore: number;
+    avgReturn40: number;
+    leaders: Array<{
+      code: string;
+      name: string;
+      score: number;
+      status: StockOpportunityStatus;
+    }>;
+  }>;
+  results: StockOpportunityItem[];
+};
+
+export type MarketRiskNewsSignal = {
+  key: string;
+  name: string;
+  hits?: string[];
+  score?: number;
+  count?: number;
+  history?: string;
+};
+
+export type MarketRiskNewsItem = {
+  title: string;
+  summary: string;
+  takeaway?: string;
+  url: string;
+  publishedAt: string;
+  source: string;
+  signals: MarketRiskNewsSignal[];
+  riskScore: number;
+};
+
+export type MarketRiskNewsResponse = {
+  mode: "live" | "partial" | "fallback" | "error";
+  source: string;
+  updatedAt: string;
+  message: string;
+  conclusion?: string;
+  action?: string;
+  reasons?: string[];
+  overallRisk: {
+    score: number;
+    level: "good" | "neutral" | "warn" | "danger";
+    label: string;
+  };
+  templates: Array<{
+    key: string;
+    name: string;
+    history: string;
+    keywords: string[];
+    weight: number;
+  }>;
+  signalSummary: MarketRiskNewsSignal[];
+  items: MarketRiskNewsItem[];
+};

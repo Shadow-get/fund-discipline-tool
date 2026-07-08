@@ -4,9 +4,12 @@ import { fallbackLowValuationScan } from "./server/lowValuationSnapshot.mjs";
 import { lowValuationUniverse } from "./server/lowValuationUniverse.mjs";
 import { fallbackMainlineScan } from "./server/mainlineSnapshot.mjs";
 import { fetchHoldingQuotes } from "./server/holdingQuotes.mjs";
+import { fetchMarketKline } from "./server/marketKline.mjs";
+import { scanMarketRiskNews } from "./server/marketRiskNews.mjs";
 import { scanMainlines } from "./server/mainlineScan.mjs";
 import { mainlineUniverse } from "./server/mainlineUniverse.mjs";
 import { runPythonCore } from "./server/pythonCore.mjs";
+import { scanStockOpportunities } from "./server/stockOpportunityScan.mjs";
 import { isAllowedStateKey, readAppState, writeAppState } from "./server/appStateStore.mjs";
 
 function sendJson(res, statusCode, payload) {
@@ -153,6 +156,43 @@ export default defineConfig({
           }
         });
 
+        server.middlewares.use("/api/stock-opportunities", async (req, res) => {
+          try {
+            const url = new URL(req.url ?? "", "http://127.0.0.1");
+            const forceFallback = url.searchParams.get("fallback") === "1";
+            const query = url.searchParams.get("query") ?? "";
+            sendJson(res, 200, await scanStockOpportunities({ forceFallback, query }));
+          } catch (error) {
+            sendJson(res, 500, {
+              mode: "error",
+              source: "本地服务",
+              updatedAt: new Date().toISOString(),
+              message: error instanceof Error ? error.message : "Stock opportunity scan failed",
+              methodology: [],
+              results: [],
+            });
+          }
+        });
+
+        server.middlewares.use("/api/market-risk-news", async (req, res) => {
+          try {
+            const url = new URL(req.url ?? "", "http://127.0.0.1");
+            const forceFallback = url.searchParams.get("fallback") === "1";
+            sendJson(res, 200, await scanMarketRiskNews({ forceFallback }));
+          } catch (error) {
+            sendJson(res, 500, {
+              mode: "error",
+              source: "本地服务",
+              updatedAt: new Date().toISOString(),
+              message: error instanceof Error ? error.message : "Market risk news scan failed",
+              overallRisk: { score: 0, level: "neutral", label: "数据异常" },
+              templates: [],
+              signalSummary: [],
+              items: [],
+            });
+          }
+        });
+
         server.middlewares.use("/api/holding-quotes", async (req, res) => {
           try {
             const url = new URL(req.url ?? "", "http://127.0.0.1");
@@ -180,6 +220,34 @@ export default defineConfig({
               updatedAt: new Date().toISOString(),
               message: error instanceof Error ? error.message : "Holding quote scan failed",
               quotes: [],
+            });
+          }
+        });
+
+        server.middlewares.use("/api/market-kline", async (req, res) => {
+          try {
+            const url = new URL(req.url ?? "", "http://127.0.0.1");
+            const code = url.searchParams.get("code") ?? "cn_hs300";
+            const period = url.searchParams.get("period") ?? "week";
+            const payload = await fetchMarketKline({ code, period });
+            sendJson(res, 200, payload);
+          } catch (error) {
+            sendJson(res, 500, {
+              mode: "error",
+              source: "本地服务",
+              updatedAt: new Date().toISOString(),
+              period: "week",
+              target: {
+                id: "unknown",
+                name: "未知标的",
+                category: "未知",
+                representativeIndex: "未知",
+                code: "",
+                secid: "",
+              },
+              message: error instanceof Error ? error.message : "Market kline failed",
+              points: [],
+              analysis: null,
             });
           }
         });
