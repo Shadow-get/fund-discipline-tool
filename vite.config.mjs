@@ -8,6 +8,7 @@ import { fetchMarketKline } from "./server/marketKline.mjs";
 import { scanMarketRiskNews } from "./server/marketRiskNews.mjs";
 import { scanMainlines } from "./server/mainlineScan.mjs";
 import { mainlineUniverse } from "./server/mainlineUniverse.mjs";
+import { scanLowValuation, scanLowValuationDynamic } from "./server/lowValuationScan.mjs";
 import { runPythonCore } from "./server/pythonCore.mjs";
 import { scanStockOpportunities } from "./server/stockOpportunityScan.mjs";
 import { isAllowedStateKey, readAppState, writeAppState } from "./server/appStateStore.mjs";
@@ -100,6 +101,8 @@ export default defineConfig({
             let payload;
 
             try {
+              payload = await scanMainlines({ forceFallback, forceRefresh });
+            } catch (jsError) {
               payload = await runPythonCore(
                 "mainline_scan",
                 {
@@ -110,8 +113,9 @@ export default defineConfig({
                 },
                 { timeoutMs: 45000 },
               );
-            } catch {
-              payload = await scanMainlines({ forceFallback, forceRefresh });
+              payload.message = `${payload.message} JS 主线扫描异常，已切换 Python 扫描。原因：${
+                jsError instanceof Error ? jsError.message : "未知错误"
+              }`;
             }
 
             sendJson(res, 200, payload);
@@ -124,9 +128,29 @@ export default defineConfig({
           }
         });
 
-        server.middlewares.use("/api/low-valuation-scan", async (_req, res) => {
+        server.middlewares.use("/api/low-valuation-scan", async (req, res) => {
           try {
+            const url = new URL(req.url ?? "", "http://127.0.0.1");
+            const dynamic = url.searchParams.get("dynamic") === "1";
+            const fast = url.searchParams.get("fast") === "1";
             let payload;
+
+            if (dynamic) {
+              try {
+                sendJson(res, 200, await scanLowValuationDynamic({ riskFreeYield: 2.2, fast }));
+              } catch (error) {
+                sendJson(res, 200, {
+                  mode: "error",
+                  source: "动态公开行情",
+                  updatedAt: new Date().toISOString(),
+                  riskFreeYield: 2.2,
+                  message: `动态低估值扫描失败：${error instanceof Error ? error.message : "未知错误"}`,
+                  methodology: [],
+                  results: [],
+                });
+              }
+              return;
+            }
 
             try {
               payload = await runPythonCore(
@@ -139,11 +163,14 @@ export default defineConfig({
                 { timeoutMs: 12000 },
               );
             } catch (error) {
-              payload = {
-                ...fallbackLowValuationScan,
-                mode: "fallback",
-                message: `Python 低估值扫描不可用，使用内置快照。原因：${error instanceof Error ? error.message : "未知错误"}`,
-              };
+              payload = scanLowValuation({
+                universe: lowValuationUniverse,
+                fallback: fallbackLowValuationScan,
+                riskFreeYield: 2.2,
+              });
+              payload.message = `${payload.message} Python 低估值扫描不可用，已切换 JS 模型。原因：${
+                error instanceof Error ? error.message : "未知错误"
+              }`;
             }
 
             sendJson(res, 200, payload);

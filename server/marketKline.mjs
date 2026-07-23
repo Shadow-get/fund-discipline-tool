@@ -151,6 +151,78 @@ async function fetchEastmoneyKlines(secid, period) {
   });
 }
 
+function toTencentSymbol(secid) {
+  const raw = String(secid ?? "").trim();
+  if (raw === "1.000300") return "sh000300";
+  if (raw.includes(".")) {
+    const [market, code] = raw.split(".");
+    if (!/^\d{6}$/.test(code)) return null;
+    return `${market === "1" ? "sh" : "sz"}${code}`;
+  }
+  const code = raw.replace(/\D/g, "");
+  if (!/^\d{6}$/.test(code)) return null;
+  return `${code.startsWith("6") || code.startsWith("5") ? "sh" : "sz"}${code}`;
+}
+
+async function fetchTencentKlines(secid, period) {
+  const symbol = toTencentSymbol(secid);
+  if (!symbol) throw new Error("腾讯 K 线标的格式无效");
+  const limit = periodLimit[period] ?? periodLimit.week;
+  const periodName = period === "month" ? "month" : period === "week" ? "week" : "day";
+  const url = `https://proxy.finance.qq.com/ifzqgtimg/appstock/app/fqkline/get?param=${symbol},${periodName},,,${limit},qfq`;
+  const response = await fetch(url, {
+    headers: {
+      "User-Agent":
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/126 Safari/537.36",
+      Referer: "https://gu.qq.com/",
+    },
+  });
+
+  if (!response.ok) {
+    throw new Error(`腾讯 K 线请求失败：HTTP ${response.status}`);
+  }
+
+  const json = await response.json();
+  const node = json?.data?.[symbol];
+  const rows = node?.[`qfq${periodName}`] ?? node?.[periodName];
+  if (!Array.isArray(rows) || rows.length < 30) {
+    throw new Error("腾讯 K 线返回数据不足");
+  }
+
+  return rows.map((row) => {
+    const [date, open, close, high, low, volume] = row;
+    const closeValue = normalizeNumber(close);
+    const volumeValue = normalizeNumber(volume);
+    return {
+      date,
+      open: normalizeNumber(open),
+      close: closeValue,
+      high: normalizeNumber(high),
+      low: normalizeNumber(low),
+      volume: volumeValue,
+      amount: Math.round(volumeValue * closeValue * 100),
+      amplitude: 0,
+      changePct: 0,
+      changeAmount: 0,
+      turnover: 0,
+    };
+  });
+}
+
+async function fetchProviderKlines(secid, period) {
+  try {
+    return { source: "腾讯公开行情", points: await fetchTencentKlines(secid, period) };
+  } catch (tencentError) {
+    try {
+      return { source: "东方财富公开行情", points: await fetchEastmoneyKlines(secid, period) };
+    } catch (eastmoneyError) {
+      const tencentMessage = tencentError instanceof Error ? tencentError.message : "腾讯K线失败";
+      const eastmoneyMessage = eastmoneyError instanceof Error ? eastmoneyError.message : "东方财富K线失败";
+      throw new Error(`${tencentMessage}; ${eastmoneyMessage}`);
+    }
+  }
+}
+
 function makeFallbackKlines(period, seed = 1) {
   const now = new Date();
   const count = period === "month" ? 90 : 140;
@@ -582,10 +654,11 @@ export async function fetchMarketKline({ code = "cn_hs300", period = "week" } = 
 
   for (const secid of secids) {
     try {
-      const points = attachMovingAverages(await fetchEastmoneyKlines(secid, normalizedPeriod));
+      const provider = await fetchProviderKlines(secid, normalizedPeriod);
+      const points = attachMovingAverages(provider.points);
       return {
         mode: "live",
-        source: "东方财富公开行情",
+        source: provider.source,
         updatedAt: new Date().toISOString(),
         period: normalizedPeriod,
         target: { ...targetPayload, secid },

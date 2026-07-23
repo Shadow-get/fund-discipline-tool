@@ -1,5 +1,5 @@
 <template>
-  <main class="page-stack">
+  <main class="page-stack" :class="{ 'is-loading-content': loading }" :aria-busy="loading">
     <section>
       <div class="section-heading">
         <div>
@@ -8,7 +8,7 @@
         </div>
         <div class="action-row">
           <RiskBadge :label="modeLabel" :kind="scan?.mode === 'live' ? 'good' : scan?.mode === 'cache' ? 'warn' : 'neutral'" />
-          <button type="button" class="primary-button" :disabled="loading" @click="loadScan(false)">
+          <button type="button" class="primary-button" :disabled="loading" @click="loadScan({ forceRefresh: true })">
             {{ loading ? "扫描中..." : "刷新主线扫描" }}
           </button>
         </div>
@@ -41,7 +41,7 @@
     />
 
     <section v-if="topAction">
-      <SectionTitle eyebrow="Decision" title="当前优先主线" note="只作为卫星仓参考，不替代核心宽基" />
+      <SectionTitle eyebrow="Decision" :title="decisionTitle" :note="decisionNote" />
       <div class="decision-panel">
         <div>
           <span class="eyebrow">{{ topAction.category }} · {{ topAction.stage }}</span>
@@ -96,6 +96,12 @@
         <span v-for="item in groups.rejected.slice(0, 28)" :key="item.candidateId">{{ item.name }} · {{ item.score }}分</span>
       </div>
     </section>
+
+    <div v-if="loading" class="content-loading-overlay" role="status" aria-live="polite">
+      <span class="loading-spinner"></span>
+      <strong>正在刷新动态主线</strong>
+      <small>交易时段会重新读取公开行情，完成后再展示结果。</small>
+    </div>
   </main>
 </template>
 
@@ -107,8 +113,9 @@ import MetricCard from "../components/MetricCard.vue";
 import RiskBadge from "../components/RiskBadge.vue";
 import SectionTitle from "../components/SectionTitle.vue";
 import { getMainlineProfile } from "../data/mainlineKnowledge";
-import { fetchMainlineScan, pickActionableMainline, splitMainlineGroups } from "../services/mainlineData";
+import { fetchMainlineScan, getMainlineStatusKind, pickActionableMainline, splitMainlineGroups } from "../services/mainlineData";
 import type { MainlineScanResponse } from "../types";
+import { isChinaTradingTime } from "../utils/marketTime";
 
 const scan = ref<MainlineScanResponse | null>(null);
 const loading = ref(false);
@@ -116,13 +123,19 @@ const error = ref("");
 
 const groups = computed(() => splitMainlineGroups(scan.value?.results ?? []));
 const topAction = computed(() => pickActionableMainline(scan.value?.results ?? []));
+const topActionKind = computed(() => (topAction.value ? getMainlineStatusKind(topAction.value) : null));
 const activeProfile = computed(() => getMainlineProfile(topAction.value));
+
+const decisionTitle = computed(() => (topActionKind.value === "top" ? "当前优先主线" : "当前优先观察方向"));
+const decisionNote = computed(() =>
+  topActionKind.value === "top" ? "只作为卫星仓参考，不替代核心宽基" : "尚未确认年度主线，只能跟踪等待条件补齐",
+);
 
 const modeLabel = computed(() => {
   if (!scan.value) return "未扫描";
-  if (scan.value.mode === "live") return "公开数据";
-  if (scan.value.mode === "cache") return "缓存数据";
-  if (scan.value.mode === "fallback") return "内置快照";
+  if (scan.value.mode === "live") return "动态数据";
+  if (scan.value.mode === "cache") return "非实时缓存";
+  if (scan.value.mode === "fallback") return "非动态快照";
   return "数据异常";
 });
 
@@ -133,7 +146,8 @@ const updatedAt = computed(() => {
 
 const mainlineConclusion = computed(() => {
   if (!scan.value) return "正在扫描公开行情，先不做主线结论。";
-  if (topAction.value) return `当前优先主线：${topAction.value.name}，建议只进入卫星仓。`;
+  if (topAction.value && topActionKind.value === "top") return `当前优先主线：${topAction.value.name}，建议只进入卫星仓。`;
+  if (topAction.value) return `当前优先观察：${topAction.value.name}，尚未确认成年度主线。`;
   if (groups.value.overheated.length) return "有热门方向，但多数处在过热等待区，本月不适合追高。";
   return "当前没有足够清晰的主线，卫星仓以等待为主。";
 });
@@ -161,11 +175,18 @@ const mainlineTrigger = computed(() => {
   return `${activeProfile.value.buyRule} ${activeProfile.value.pauseRule}`;
 });
 
-async function loadScan(forceFallback: boolean) {
+async function loadScan(options: { forceFallback?: boolean; forceRefresh?: boolean } = {}) {
   loading.value = true;
   error.value = "";
   try {
-    scan.value = await fetchMainlineScan(forceFallback);
+    const requireLive = isChinaTradingTime();
+    const payload = await fetchMainlineScan(Boolean(options.forceFallback), Boolean(options.forceRefresh || requireLive));
+    if (requireLive && payload.mode !== "live") {
+      scan.value = null;
+      error.value = `交易时间只展示动态行情，当前未取得实时主线扫描：${payload.message}`;
+      return;
+    }
+    scan.value = payload;
   } catch (err) {
     error.value = err instanceof Error ? err.message : "主线扫描失败";
   } finally {
@@ -174,6 +195,6 @@ async function loadScan(forceFallback: boolean) {
 }
 
 onMounted(() => {
-  void loadScan(false);
+  void loadScan();
 });
 </script>

@@ -21,7 +21,25 @@ function scoreFromReturn(value, center = 0, scale = 20) {
   return clamp(50 + ((value - center) / scale) * 50);
 }
 
-async function fetchKlines(secid) {
+function normalizeNumber(value, fallback = 0) {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) && parsed > -900 ? parsed : fallback;
+}
+
+function toTencentSymbol(secid) {
+  const raw = String(secid ?? "").trim();
+  if (raw === "1.000300") return "sh000300";
+  if (raw.includes(".")) {
+    const [market, code] = raw.split(".");
+    if (!/^\d{6}$/.test(code)) return null;
+    return `${market === "1" ? "sh" : "sz"}${code}`;
+  }
+  const code = raw.replace(/\D/g, "");
+  if (!/^\d{6}$/.test(code)) return null;
+  return `${code.startsWith("6") || code.startsWith("5") ? "sh" : "sz"}${code}`;
+}
+
+async function fetchEastmoneyKlines(secid) {
   const url =
     `https://push2his.eastmoney.com/api/qt/stock/kline/get?secid=${secid}` +
     `&ut=fa5fd1943c7b386f172d6893dbfba10b&klt=101&fqt=1&end=20500101&lmt=150` +
@@ -41,33 +59,90 @@ async function fetchKlines(secid) {
   const json = await response.json();
   const lines = json?.data?.klines;
   if (!Array.isArray(lines) || lines.length < 30) {
-    throw new Error("行情数据不足");
+    throw new Error("东方财富行情数据不足");
   }
 
   return lines.map((line) => {
     const [date, open, close, high, low, volume, amount, amplitude, changePct, changeAmount, turnover] = String(line).split(",");
     return {
       date,
-      open: Number(open),
-      close: Number(close),
-      high: Number(high),
-      low: Number(low),
-      volume: Number(volume),
-      amount: Number(amount),
-      amplitude: Number(amplitude),
-      changePct: Number(changePct),
-      changeAmount: Number(changeAmount),
-      turnover: Number(turnover),
+      open: normalizeNumber(open),
+      close: normalizeNumber(close),
+      high: normalizeNumber(high),
+      low: normalizeNumber(low),
+      volume: normalizeNumber(volume),
+      amount: normalizeNumber(amount),
+      amplitude: normalizeNumber(amplitude),
+      changePct: normalizeNumber(changePct),
+      changeAmount: normalizeNumber(changeAmount),
+      turnover: normalizeNumber(turnover),
     };
   });
+}
+
+async function fetchTencentKlines(secid) {
+  const symbol = toTencentSymbol(secid);
+  if (!symbol) throw new Error("腾讯行情标的格式无效");
+  const url = `https://proxy.finance.qq.com/ifzqgtimg/appstock/app/fqkline/get?param=${symbol},day,,,150,qfq`;
+  const response = await fetch(url, {
+    headers: {
+      "User-Agent":
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/126 Safari/537.36",
+      Referer: "https://gu.qq.com/",
+    },
+  });
+
+  if (!response.ok) {
+    throw new Error(`腾讯行情请求失败 ${response.status}`);
+  }
+
+  const json = await response.json();
+  const node = json?.data?.[symbol];
+  const rows = node?.qfqday ?? node?.day;
+  if (!Array.isArray(rows) || rows.length < 30) {
+    throw new Error("腾讯行情数据不足");
+  }
+
+  return rows.map((row) => {
+    const [date, open, close, high, low, volume] = row;
+    const closeValue = normalizeNumber(close);
+    const volumeValue = normalizeNumber(volume);
+    return {
+      date,
+      open: normalizeNumber(open),
+      close: closeValue,
+      high: normalizeNumber(high),
+      low: normalizeNumber(low),
+      volume: volumeValue,
+      amount: Math.round(volumeValue * closeValue * 100),
+      amplitude: 0,
+      changePct: 0,
+      changeAmount: 0,
+      turnover: 0,
+    };
+  });
+}
+
+async function fetchKlines(secid) {
+  try {
+    return { provider: "腾讯公开行情", klines: await fetchTencentKlines(secid) };
+  } catch (tencentError) {
+    try {
+      return { provider: "东方财富公开行情", klines: await fetchEastmoneyKlines(secid) };
+    } catch (eastmoneyError) {
+      const tencentMessage = tencentError instanceof Error ? tencentError.message : "腾讯行情失败";
+      const eastmoneyMessage = eastmoneyError instanceof Error ? eastmoneyError.message : "东方财富行情失败";
+      throw new Error(`${tencentMessage}; ${eastmoneyMessage}`);
+    }
+  }
 }
 
 async function fetchCandidateSeries(candidate) {
   const errors = [];
   for (const security of candidate.securities) {
     try {
-      const klines = await fetchKlines(security.secid);
-      return { security, klines };
+      const { provider, klines } = await fetchKlines(security.secid);
+      return { security, provider, klines };
     } catch (error) {
       errors.push(`${security.name}:${error.message}`);
     }
@@ -216,7 +291,7 @@ function analyzeKlines(candidate, series, benchmark) {
       heat: `热度 ${Math.round(heatScore)} 分，估值/拥挤代理分位 ${Math.round(valuationPercentile)}%。`,
       policy: `${candidate.tags.join("、")}；产业/政策元数据 ${Math.round(candidate.industryScore * 0.6 + candidate.policyScore * 0.4)} 分。`,
     },
-    source: `东方财富公开行情：${series.security.name}`,
+    source: `${series.provider}：${series.security.name}`,
     updatedAt: new Date().toISOString(),
   };
 }

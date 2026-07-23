@@ -180,9 +180,9 @@ function toDynamicStock(row, sourceTag) {
   };
 }
 
-async function fetchMarketSnapshotFromHost(baseUrl) {
+async function fetchMarketSnapshotFromHost(baseUrl, { fast = false } = {}) {
   const all = [];
-  for (let page = 1; page <= 60; page += 1) {
+  for (let page = 1; page <= (fast ? 12 : 60); page += 1) {
     const url =
       `${baseUrl}/api/qt/clist/get?pn=${page}&pz=100&po=1&np=1&fltt=2&invt=2&fid=f3` +
       "&fs=m:0+t:6,m:0+t:80,m:1+t:2,m:1+t:23" +
@@ -203,12 +203,12 @@ async function fetchMarketSnapshotFromHost(baseUrl) {
   return validRows;
 }
 
-async function fetchMarketSnapshot() {
+async function fetchMarketSnapshot({ fast = false } = {}) {
   const hosts = ["https://push2.eastmoney.com", "https://push2delay.eastmoney.com"];
   const errors = [];
   for (const host of hosts) {
     try {
-      return await fetchMarketSnapshotFromHost(host);
+      return await fetchMarketSnapshotFromHost(host, { fast });
     } catch (error) {
       errors.push(`${host.replace("https://", "")}: ${error instanceof Error ? error.message : "未知错误"}`);
     }
@@ -334,18 +334,18 @@ async function fetchSinaRows(sort, pageLimit = 4) {
   return rows;
 }
 
-async function fetchSinaDynamicUniverse() {
+async function fetchSinaDynamicUniverse({ fast = false } = {}) {
   const [changeRows, turnoverRows, amountRows] = await Promise.all([
-    fetchSinaRows("changepercent", 6),
-    fetchSinaRows("turnoverratio", 10),
-    fetchSinaRows("amount", 80),
+    fetchSinaRows("changepercent", fast ? 3 : 6),
+    fetchSinaRows("turnoverratio", fast ? 4 : 10),
+    fetchSinaRows("amount", fast ? 8 : 80),
   ]);
   const picked = [];
   const seen = new Set();
   const addGroup = (rows, limit, sourceTag) => {
     let added = 0;
     for (const row of rows) {
-      if (picked.length >= 260) break;
+      if (picked.length >= (fast ? 110 : 260)) break;
       if (seen.has(row.code)) continue;
       picked.push(toSinaStock(row, sourceTag));
       seen.add(row.code);
@@ -364,24 +364,24 @@ async function fetchSinaDynamicUniverse() {
   const byTurnover = [...turnoverRows].sort((a, b) => Number(b.turnoverratio || 0) - Number(a.turnoverratio || 0));
   const bySmallCap = [...amountRows].sort((a, b) => sinaSmallCapScore(b) - sinaSmallCapScore(a));
 
-  addGroup(byCycleProxy, 90, "强周期/高换手");
-  addGroup(byValueBlueChip, 60, "低估值白马");
-  addGroup(byDailyHeat, 45, "涨幅热度");
-  addGroup(byTurnover, 45, "换手异动");
-  addGroup(bySmallCap, 35, "小市值弹性");
+  addGroup(byCycleProxy, fast ? 42 : 90, "强周期/高换手");
+  addGroup(byValueBlueChip, fast ? 30 : 60, "低估值白马");
+  addGroup(byDailyHeat, fast ? 18 : 45, "涨幅热度");
+  addGroup(byTurnover, fast ? 14 : 45, "换手异动");
+  addGroup(bySmallCap, fast ? 10 : 35, "小市值弹性");
   const universe = uniqueStocks(picked);
   if (!universe.length) throw new Error("新浪实时候选为空");
   return universe;
 }
 
-async function fetchDynamicUniverse() {
+async function fetchDynamicUniverse({ fast = false } = {}) {
   try {
-    const rows = await fetchMarketSnapshot();
-    const universe = buildDiscoveryUniverse(rows);
+    const rows = await fetchMarketSnapshot({ fast });
+    const universe = buildDiscoveryUniverse(rows).slice(0, fast ? 80 : 260);
     if (!universe.length) throw new Error("动态候选池为空");
     return { universe, provider: "东方财富全市场行业快照" };
   } catch (error) {
-    const universe = await fetchSinaDynamicUniverse();
+    const universe = await fetchSinaDynamicUniverse({ fast });
     return {
       universe,
       provider: `新浪实时涨幅/换手/成交额榜，东方财富快照不可用：${error instanceof Error ? error.message : "未知错误"}`,
@@ -510,7 +510,36 @@ async function fetchTencentKlines(code) {
   );
 }
 
-async function fetchFinancialSnapshot(stock) {
+function makeEstimatedFinancial(stock, summary = "暂未读取到最新财报，使用候选来源和本地质量锚估算。") {
+  const qualityAnchorScore = Math.round(clamp(stock.qualityScore));
+  return {
+    mode: "estimate",
+    report: "极速扫描估算",
+    reportDate: "",
+    revenueYoy: 0,
+    profitYoy: 0,
+    roe: 0,
+    grossMargin: 0,
+    netMargin: 0,
+    debtRatio: 0,
+    cashToRevenue: 0,
+    financialScore: qualityAnchorScore,
+    growthScore: 0,
+    profitabilityScore: 0,
+    balanceScore: 0,
+    cashFlowScore: 0,
+    qualityAnchorScore,
+    highlights: [`极速扫描模式暂不逐只读取财报，使用质量锚 ${qualityAnchorScore} 分。`],
+    deductions: ["需要搜索单只股票或进入深度扫描后，才能读取最新财报分项。"],
+    summary,
+  };
+}
+
+async function fetchFinancialSnapshot(stock, { estimateOnly = false } = {}) {
+  if (estimateOnly) {
+    return makeEstimatedFinancial(stock, "极速扫描未读取逐股财报，当前财报分只是候选质量锚；搜索单股可查看真实财报。");
+  }
+
   const secucode = toSecucode(stock.code);
   const url =
     `https://datacenter.eastmoney.com/securities/api/data/get?type=RPT_F10_FINANCE_MAINFINADATA` +
@@ -591,27 +620,7 @@ async function fetchFinancialSnapshot(stock) {
       summary,
     };
   } catch {
-    return {
-      mode: "estimate",
-      report: "本地质量估算",
-      reportDate: "",
-      revenueYoy: 0,
-      profitYoy: 0,
-      roe: 0,
-      grossMargin: 0,
-      netMargin: 0,
-      debtRatio: 0,
-      cashToRevenue: 0,
-      financialScore: Math.round(clamp(stock.qualityScore)),
-      growthScore: 0,
-      profitabilityScore: 0,
-      balanceScore: 0,
-      cashFlowScore: 0,
-      qualityAnchorScore: Math.round(clamp(stock.qualityScore)),
-      highlights: [`暂未读取到最新财报，沿用本地质量锚 ${Math.round(clamp(stock.qualityScore))} 分。`],
-      deductions: ["实时财报接口不可用，无法判断最新一期增长、现金流和负债变化。"],
-      summary: "暂未读取到最新财报，使用本地质量元数据估算。",
-    };
+    return makeEstimatedFinancial(stock, "暂未读取到最新财报，使用本地质量元数据估算。");
   }
 }
 
@@ -787,8 +796,8 @@ function classifyStrategyFit(stock, financial, return40, volumeRatio, relative40
   };
 }
 
-async function analyzeStock(stock, points, benchmark) {
-  const financial = await fetchFinancialSnapshot(stock);
+async function analyzeStock(stock, points, benchmark, { estimateFinancial = false } = {}) {
+  const financial = await fetchFinancialSnapshot(stock, { estimateOnly: estimateFinancial });
   const last = points.at(-1);
   const close20 = points.at(-21)?.close ?? points[0].close;
   const close40 = points.at(-41)?.close ?? points[0].close;
@@ -1165,7 +1174,7 @@ function makeLiveError(message, searchQuery = "") {
   };
 }
 
-export async function scanStockOpportunities({ forceFallback = false, query = "" } = {}) {
+export async function scanStockOpportunities({ forceFallback = false, query = "", fast = false } = {}) {
   const searchQuery = String(query ?? "").trim();
   if (forceFallback) {
     return makeFallbackScan("使用内置样本，不读取公开行情。");
@@ -1174,7 +1183,7 @@ export async function scanStockOpportunities({ forceFallback = false, query = ""
   try {
     const discovery = searchQuery
       ? { universe: await searchRemoteStocks(searchQuery), provider: "用户检索 + 实时K线/财报" }
-      : await fetchDynamicUniverse();
+      : await fetchDynamicUniverse({ fast });
     const universe = discovery.universe;
     if (!universe.length) {
       return makeLiveError(`未找到匹配个股：${searchQuery}`, searchQuery);
@@ -1190,8 +1199,8 @@ export async function scanStockOpportunities({ forceFallback = false, query = ""
       benchmark = { return40: 0 };
     }
 
-    const settled = await mapSettledWithConcurrency(universe, searchQuery ? 3 : 4, async (stock) =>
-      analyzeStock(stock, await fetchKlines(stock.code), benchmark),
+    const settled = await mapSettledWithConcurrency(universe, searchQuery ? 3 : fast ? 3 : 4, async (stock) =>
+      analyzeStock(stock, await fetchKlines(stock.code), benchmark, { estimateFinancial: fast && !searchQuery }),
     );
     const results = settled
       .filter((item) => item.status === "fulfilled")
@@ -1206,11 +1215,13 @@ export async function scanStockOpportunities({ forceFallback = false, query = ""
 
     return {
       mode: "live",
-      source: searchQuery ? "用户检索 + 腾讯/东方财富K线 + 东方财富财报" : `${discovery.provider} + 腾讯/东方财富K线 + 东方财富财报`,
+      source: searchQuery
+        ? "用户检索 + 腾讯/东方财富K线 + 东方财富财报"
+        : `${discovery.provider} + 腾讯/东方财富K线${fast ? " + 极速财报估算" : " + 东方财富财报"}`,
       updatedAt: new Date().toISOString(),
       message: searchQuery
         ? `检索“${searchQuery}”，匹配 ${universe.length} 只，成功分析 ${results.length} 只${failures.length ? `，失败 ${failures.length} 只` : ""}。`
-        : `动态发现候选 ${universe.length} 只，成功分析 ${results.length} 只${failures.length ? `，失败 ${failures.length} 只` : ""}。`,
+        : `动态发现候选 ${universe.length} 只，成功分析 ${results.length} 只${failures.length ? `，失败 ${failures.length} 只` : ""}。${fast ? "线上极速模式先估算财报，搜索单股可查看真实财报。" : ""}`,
       searchQuery,
       methodology: ["实时热度榜", "近40日趋势筛选", "温斯坦阶段分析", "奥尼尔量价与相对强度", "芒格/巴菲特质量过滤"],
       sectorSummary: buildSectorSummary(results),

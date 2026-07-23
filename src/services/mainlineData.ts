@@ -1,5 +1,6 @@
 import { localMainlineSnapshot } from "../data/mainlineSnapshot";
 import type { MainlineScanItem, MainlineScanResponse, MainlineStatusKey } from "../types";
+import { isChinaTradingTime } from "../utils/marketTime";
 
 export function getMainlineStatusKind(item: MainlineScanItem): MainlineStatusKey {
   if (item.statusKey) return item.statusKey;
@@ -29,7 +30,7 @@ export function pickActionableMainline(items: MainlineScanItem[]) {
   return items.find((item) => isMainlineStatusKind(item, "top")) ?? items.find((item) => isMainlineStatusKind(item, "watch"));
 }
 
-export async function fetchMainlineScan(forceFallback = false, forceRefresh = false): Promise<MainlineScanResponse> {
+export async function fetchMainlineScan(forceFallback = false, forceRefresh = isChinaTradingTime()): Promise<MainlineScanResponse> {
   try {
     const params = new URLSearchParams();
     if (forceFallback) params.set("fallback", "1");

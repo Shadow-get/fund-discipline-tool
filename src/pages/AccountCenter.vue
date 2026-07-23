@@ -518,8 +518,8 @@ function modeLabel(mode: string) {
   const map: Record<string, string> = {
     live: "实时行情",
     cache: "最近缓存",
-    fallback: "内置快照",
-    model: "估值模型",
+    fallback: "非动态快照",
+    model: "非动态模型",
     error: "读取异常",
   };
   return map[mode] ?? mode;

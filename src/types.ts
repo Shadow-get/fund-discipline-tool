@@ -99,10 +99,17 @@ export type LowValuationStatusKey = "top" | "watch" | "trap" | "fair";
 
 export type LowValuationScanItem = {
   candidateId: string;
+  code?: string;
   name: string;
   category: string;
   representativeIndex: string;
   representativeEtfs: string[];
+  close?: number;
+  dailyChangePct?: number;
+  turnoverRate?: number;
+  fundFlowRatio?: number;
+  amount?: number;
+  dynamic?: boolean;
   pe: number;
   pb: number;
   pePercentile: number;
@@ -134,7 +141,7 @@ export type LowValuationScanItem = {
 };
 
 export type LowValuationScanResponse = {
-  mode: "model" | "fallback" | "error";
+  mode: "live" | "model" | "fallback" | "error";
   source: string;
   updatedAt: string;
   riskFreeYield: number;

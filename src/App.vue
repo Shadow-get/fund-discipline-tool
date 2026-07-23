@@ -35,7 +35,9 @@ import { computed, nextTick, onBeforeUnmount, onMounted, ref } from "vue";
 import AccountCenter from "./pages/AccountCenter.vue";
 import AnnualHarvest from "./pages/AnnualHarvest.vue";
 import Dashboard from "./pages/Dashboard.vue";
-import LowValuationPage from "./pages/LowValuationPage.vue";
+import FinancialEducationPage from "./pages/FinancialEducationPage.vue";
+import LowValueReboundPage from "./pages/LowValueReboundPage.vue";
+import LowValueStrategyPage from "./pages/LowValueStrategyPage.vue";
 import MainlinePage from "./pages/MainlinePage.vue";
 import MarketRiskNewsPage from "./pages/MarketRiskNewsPage.vue";
 import MonthlyCashflow from "./pages/MonthlyCashflow.vue";
@@ -52,9 +54,11 @@ const tabs = [
   { key: "cashflow", label: "月现金流", group: "执行", component: MonthlyCashflow },
   { key: "portfolio", label: "组合体检", group: "执行", component: PortfolioHealth },
   { key: "mainline", label: "当年主线", group: "市场机会", component: MainlinePage },
-  { key: "lowValuation", label: "低估值板块", group: "市场机会", component: LowValuationPage },
+  { key: "lowValueStrategy", label: "低估价值策略", group: "市场机会", component: LowValueStrategyPage },
+  { key: "lowValueRebound", label: "趋势回弹机会", group: "市场机会", component: LowValueReboundPage },
   { key: "stockOpportunity", label: "个股观察", group: "市场机会", component: StockOpportunityPage },
   { key: "riskNews", label: "风险新闻", group: "市场机会", component: MarketRiskNewsPage },
+  { key: "education", label: "每日金融课", group: "学习", component: FinancialEducationPage },
   { key: "valuation", label: "高低估买卖器", group: "工具", component: ValuationTrader },
   { key: "scenario", label: "情景模拟", group: "工具", component: ScenarioSimulator },
   { key: "harvest", label: "年度收割", group: "工具", component: AnnualHarvest },
